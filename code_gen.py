@@ -1,4 +1,5 @@
 from random import sample, randint, shuffle
+
 import numpy as np
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import reverse_cuthill_mckee
@@ -225,3 +226,8 @@ def safe_code_gen(bit_deg=3, check_deg=4, nmult=2, rcmk=True):
                 bit_deg=bit_deg, check_deg=check_deg, nmult=nmult, rcmk=rcmk)
 
     return parity
+
+
+if __name__ == "__main__":
+    parity_check = cg.safe_code_gen(
+        bit_deg=3, check_deg=4, nmult=2, rcmk=True)

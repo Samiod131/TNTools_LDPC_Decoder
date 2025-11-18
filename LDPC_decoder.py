@@ -1,24 +1,24 @@
-import numpy as np
-import warnings
-from numpy.core.fromnumeric import nonzero
-from scipy import sparse
-import TN_libraries.TNTools as tnt
-import curveball_codegen.code_gen as cg
 import time
 import json
-import pickle
+import warnings
 import sys
-from tqdm import tqdm
 
+import numpy as np
+import pickle
+
+import TNTools as tnt
+import code_gen as cg
 
 '''
-This is a code generator for selecting the best LDPC codes for the the decoder
-testing. it uses the decoder itself to evaluate the best. Tests are usually done
-at a physical error rate of 0.15, as it is a value around threshold for
-the 3-4 ldpc code class (the one tested in my thesis)
+Classical LDPC decoder using TNTools MPS-MPO formalism. This files reads a list
+of parameters from a json file dictionnary. 
 
--Samuel Desrosiers,
-23/11/2021
+To run this program run it into the terminal such as:
+
+    ^^^ python LDPC_decoder_pyqec.py PATH
+
+Where PATH is the path leading to where the parameter lists are. This is also
+where results will be stored in a txt file.
 
 '''
 
@@ -40,7 +40,7 @@ def xor_4t2():
     '''
     This function returns the four legged tensor fusion of a 3 variables xor
     tensor and a 3 legged copy tensor. Basic tensor of the decomposition of an
-    xor gate into MPO format.  
+    xor gate into MPO format.
     '''
     # creating initial 3 legs xor tensor
     reverse_id = np.array([[0., 1.], [1., 0.]])
@@ -68,7 +68,7 @@ def parity_TN(check, par_tens=xor_4t2(), adjacency=True):
     cross = np.tensordot(np.identity(2), np.identity(2), axes=0)
     # adapting receiving of input, adjacency matrix rows of check positions
     if adjacency == True:
-        nonzeros = np.nonzero(check)[0]
+        nonzeros = np.core.fromnumeric.nonzero(check)[0]
     else:
         nonzeros = np.array([c for c in check])
 
@@ -151,6 +151,76 @@ def classical_ldpc_decoding(entry, checks, decoder_par, svd_function_par, main_c
 
 
 '''
+Function for data saving
+'''
+
+
+def results_saving(results, filename='results.txt'):
+    '''
+    Saves all params and results to a txt file. 
+    '''
+    # Unpackig each sub_dictionnary
+    labels = []
+    values = []
+    for sub_dict in results.values():
+        labels = labels+list(sub_dict.keys())
+        values = values+list(sub_dict.values())
+
+    save_to_file(parameters=values, filename=filename, header=labels)
+
+    return labels, values
+
+
+def save_to_file(parameters, filename, header=False, buffer=30):
+    '''
+    Saving a list of elements into a text, csv or dat file. Allows for header
+    selection when no precedent file already existing.
+    '''
+    try:
+        with open(filename) as _:
+            pass
+
+    except FileNotFoundError:
+        if header is False:
+            print('The file doesn\'t exist. Creating one for data.')
+
+        else:
+            print('File doesn\'t exist, Creating one with given header.')
+            header_line = ''
+            for i, param in enumerate(header):
+                if i == len(parameters)-1:
+                    param_add = str(param)
+                else:
+                    param_add = str(param)+','
+                skip = buffer-len(param_add)
+                if skip <= 0:
+                    param_add += ' '*buffer
+                else:
+                    param_add += ' '*skip
+                header_line += param_add
+            save = open(filename, 'a')
+            print(header_line, file=save)
+            save.close()
+
+    step_line = ''
+    for i, param in enumerate(parameters):
+        if i == len(parameters)-1:
+            param_add = str(param)
+        else:
+            param_add = str(param)+','
+        skip = buffer-len(param_add)
+        if skip <= 0:
+            param_add += ' '*buffer
+        else:
+            param_add += ' '*skip
+        step_line += param_add
+
+    save = open(filename, 'a')
+    print(step_line, file=save)
+    save.close()
+
+
+'''
 Decoder class + schedule
 '''
 
@@ -175,18 +245,43 @@ class TN_LDPC_Decoder:
         return output
 
 
-def code_select(bit_degree, check_degree, code_size_mult, phys_err_rt, num_times):
+class TimedDecoder:
     '''
-    Builds a code,  and the number of successive experiences from
+    To keep time of each decoding procedure. 
+    '''
+
+    def __init__(self, decoder):
+        self.decoder = decoder
+        self.times = []
+
+    def decode(self, entry):
+        before = time.time()
+        output = self.decoder.decode(entry)
+        after = time.time()
+
+        self.times.append(after-before)
+
+        return output
+
+
+def code_select(bit_degree, check_degree, code_size_mult, phys_err_rt, num_times, codes_path):
+    '''
+    Selects the right code, and the number of successive experiences from
     given parameters.
     '''
-    ldpc_code = cg.safe_code_gen(
-        bit_deg=bit_degree, check_deg=check_degree, nmult=code_size_mult, rcmk=True)
+    try:
+        with open(codes_path+'/'+str(bit_degree)+'_' + str(check_degree)+'_'+str(code_size_mult)+'.pkl', "rb") as file:
+            ldpc_code = pickle.load(file)[2]
+    except:
+        warnings.warn(
+            'No detected code for selected class. Generating a random one.')
+        ldpc_code = cg.safe_code_gen(
+            bit_deg=bit_degree, check_deg=check_degree, nmult=code_size_mult, rcmk=True)
 
     return ldpc_code, phys_err_rt, num_times, check_degree*code_size_mult
 
 
-def run_func(code_selector, decoder_par, svd_function_par, main_comp_finder_par):
+def new_run_func(code_selector, decoder_par, svd_function_par, main_comp_finder_par, codes_path):
     '''
     Run one serie of experience for a set of parameters and returns the required
     parameters results in a dictionnary format.
@@ -194,10 +289,10 @@ def run_func(code_selector, decoder_par, svd_function_par, main_comp_finder_par)
 
     # Gets the right LDPC code or the testing
     ldpc_code, phys_err_rt, num_times, entry_size = code_select(
-        **code_selector)
+        **code_selector, codes_path=codes_path)
 
-    decoder = TN_LDPC_Decoder(
-        parity_mat=ldpc_code, decoder_par=decoder_par, svd_function_par=svd_function_par, main_comp_finder_par=main_comp_finder_par)
+    decoder = TimedDecoder(TN_LDPC_Decoder(
+        parity_mat=ldpc_code, decoder_par=decoder_par, svd_function_par=svd_function_par, main_comp_finder_par=main_comp_finder_par))
 
     # Default case for minimal noise cutting in svd function
     if svd_function_par['err_th'] == 'default':
@@ -214,7 +309,7 @@ def run_func(code_selector, decoder_par, svd_function_par, main_comp_finder_par)
     # Create list for storing all failures / successes
     failures = []
 
-    pbar = tqdm(total=num_times)
+
     for _ in range(num_times):
         # Generate Random entry with given error rate
         entry = bitflip_array(p=phys_err_rt, n=entry_size)
@@ -229,80 +324,18 @@ def run_func(code_selector, decoder_par, svd_function_par, main_comp_finder_par)
             failures.append(0)
         else:
             failures.append(1)
-        pbar.update(1)
-    pbar.close()
 
-    failure_rt = np.mean(failures)
+    results = {"results": {
+        "failure_rt": np.mean(failures),
+        "fail_std": np.std(failures),
+        "avg_time": np.mean(decoder.times),
+        "time_std": np.std(decoder.times)
+    }}
 
-    return failure_rt, ldpc_code
-
-
-def best_code(best_of, code_selector, decoder_par, svd_function_par, main_comp_finder_par, max_zeros=5):
-    '''
-    Finds the best code of few generated randomly. Makes sure the physical error
-    rate chosen is not completely off-threshold.
-    '''
-    best_fail_rate = 1
-    best_code = None
-    iter = 0
-
-    # Variables for threshold detection.
-    fail_rt_legacy = []
-    adjust_step = 0.01
-    adjust_under = False
-    adjust_over = False
-
-    print('Starting loop of codes testing.')
-
-    pb = tqdm(total=best_of["best_of"])
-
-    while iter < best_of["best_of"]:
-        #print('Generating one code in the loop')
-        fail_rate, code = run_func(
-            code_selector, decoder_par, svd_function_par, main_comp_finder_par)
-        #print('One generated code successfully.')
-        fail_rt_legacy.append(fail_rate)
-        if fail_rate < best_fail_rate:
-            best_fail_rate = fail_rate
-            best_code = code
-
-        iter += 1
-        pb.update(1)
-
-        # Making sure that the phys err rate is not completely below threshold
-        if iter == max_zeros and max(fail_rt_legacy) <= 0.1:
-            warnings.warn('Error rate below threshold. Adjusting!')
-            iter = 0
-            pb.update(-1*max_zeros)
-            adjust_under = True
-            # Adapting adjust step if back and forth
-            if adjust_over is True:
-                warnings.warn('Reducung step size.')
-                adjust_step = adjust_step/10
-                adjust_over = False
-            code_selector["phys_err_rt"] += adjust_step
-            fail_rt_legacy = []
-
-        # Making sure that the phys err rate is not over threshold
-        if iter == max_zeros and min(fail_rt_legacy) >= 0.4:
-            warnings.warn('Error rate over/too close to threshold. Adjusting!')
-            iter = 0
-            pb.update(-1*max_zeros)
-            adjust_over = True
-            # Adapting adjust step if back and forth
-            if adjust_under is True:
-                warnings.warn('Reducing step size.')
-                adjust_step = adjust_step/10
-                adjust_under = False
-            code_selector["phys_err_rt"] -= adjust_step
-            fail_rt_legacy = []
-
-    pb.close()
-
-    return best_fail_rate, code_selector["phys_err_rt"], best_code
+    return results
 
 
-def make_codes_frm_file(start_from='code_selector_dict_list.json', send_to='./'):
+def run_decode_frm_file(start_from='param_dict_list.json', send_to='results_list.txt', codes_path='selected_codes'):
     '''
     Runs a batch of decoding procedures studies for a set of parameters from a
     list of dictionnaries in a file.
@@ -313,35 +346,17 @@ def make_codes_frm_file(start_from='code_selector_dict_list.json', send_to='./')
 
     # list of parameters studies
     iter = 1
+
+    # progress bar
     for param_set in params_list:
-        print('[Code '+str(iter)+' out of '+str(len(params_list))+']')
+        print('[Plotting point '+str(iter)+' of '+str(len(params_list))+']')
         # run decoding procedure
-        fail_rate, phys_rate, selected_code = best_code(**param_set)
-        print('Generated code, now saving it!')
+        results = new_run_func(codes_path=codes_path, **param_set)
+        # Put params+ results into one dictionary
+        data_point = {**param_set, **results}
 
-        # save code
-        decoder_dict = param_set["code_selector"]
-        bit_degree = decoder_dict["bit_degree"]
-        check_degree = decoder_dict["check_degree"]
-        n_mult = decoder_dict["code_size_mult"]
+        results_saving(data_point, filename=send_to)
         iter += 1
-
-        # Saving code or comparing ith already existing one.
-        try:
-            with open(send_to+'/'+str(bit_degree)+'_' + str(check_degree)+'_'+str(n_mult)+'.pkl', "rb") as file:
-                data = pickle.load(file)
-                legacy_fail_rate = data[0]
-                legacy_phys_rate = data[1]
-            if legacy_fail_rate <= fail_rate and legacy_phys_rate >= phys_rate:
-                print('Already better existing code. Not replacing it.')
-            else:
-                print('Already existing inferior code. Replacing it.')
-                with open(send_to+'/'+str(bit_degree)+'_' + str(check_degree)+'_'+str(n_mult)+'.pkl', "wb") as file:
-                    pickle.dump([fail_rate, phys_rate, selected_code], file)
-        except:
-            print('No already existing code. Creating file.')
-            with open(send_to+'/'+str(bit_degree)+'_' + str(check_degree)+'_'+str(n_mult)+'.pkl', "wb") as file:
-                pickle.dump([fail_rate, phys_rate, selected_code], file)
 
 
 if __name__ == "__main__":
@@ -351,5 +366,5 @@ if __name__ == "__main__":
     else:
         path = 'LDPC_params_results'
 
-    make_codes_frm_file(start_from=path+'/codes_dict_list.json',
-                        send_to=path+'/selected_codes/')
+    run_decode_frm_file(start_from=path+'/param_dict_list.json',
+                        send_to=path+'/results_list.txt', codes_path=path+'/selected_codes/')

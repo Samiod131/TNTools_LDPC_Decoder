@@ -4,10 +4,9 @@ import warnings
 import sys
 
 import numpy as np
-import pickle
 
 import TNTools as tnt
-import code_gen as cg
+import code_gen
 
 '''
 Classical LDPC decoder using TNTools MPS-MPO formalism. This files reads a list
@@ -269,14 +268,8 @@ def code_select(bit_degree, check_degree, code_size_mult, phys_err_rt, num_times
     Selects the right code, and the number of successive experiences from
     given parameters.
     '''
-    try:
-        with open(codes_path+'/'+str(bit_degree)+'_' + str(check_degree)+'_'+str(code_size_mult)+'.pkl', "rb") as file:
-            ldpc_code = pickle.load(file)[2]
-    except:
-        warnings.warn(
-            'No detected code for selected class. Generating a random one.')
-        ldpc_code = cg.safe_code_gen(
-            bit_deg=bit_degree, check_deg=check_degree, nmult=code_size_mult, rcmk=True)
+    ldpc_code = code_gen.safe_code_gen(
+        bit_deg=bit_degree, check_deg=check_degree, nmult=code_size_mult, rcmk=True)
 
     return ldpc_code, phys_err_rt, num_times, check_degree*code_size_mult
 

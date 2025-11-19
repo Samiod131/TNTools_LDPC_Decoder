@@ -1,8 +1,7 @@
-from random import sample, randint, shuffle
+from random import sample, shuffle
 
 import numpy as np
-from scipy.sparse import csr_matrix
-from scipy.sparse.csgraph import reverse_cuthill_mckee
+import scipy
 
 
 '''
@@ -138,9 +137,9 @@ def checks_rcmk_run(matrix):
     '''
     # Matrix for check exchange
     checks_mat = np.matmul(matrix, np.transpose(matrix))
-    check_graph = csr_matrix(checks_mat)
+    check_graph = scipy.sparse.csr_matrix(checks_mat)
 
-    perm_vect_check = reverse_cuthill_mckee(check_graph, symmetric_mode=True)
+    perm_vect_check = scipy.sparse.csgraph.reverse_cuthill_mckee(check_graph, symmetric_mode=True)
     check_permute_mat = gen_permute_mat(perm_vect_check)
 
     new_mat = np.matmul(check_permute_mat, matrix)
@@ -154,9 +153,9 @@ def bits_rcmk_run(matrix):
     '''
     # matrix for bit exchange
     bit_mat = np.matmul(np.transpose(matrix), matrix)
-    bit_graph = csr_matrix(bit_mat)
+    bit_graph = scipy.sparse.csr_matrix(bit_mat)
 
-    perm_vect_bit = reverse_cuthill_mckee(bit_graph, symmetric_mode=True)
+    perm_vect_bit = scipy.sparse.csgraph.reverse_cuthill_mckee(bit_graph, symmetric_mode=True)
     bit_permute_mat = np.transpose(gen_permute_mat(perm_vect_bit))
 
     new_mat = np.matmul(matrix, bit_permute_mat)
@@ -229,5 +228,5 @@ def safe_code_gen(bit_deg=3, check_deg=4, nmult=2, rcmk=True):
 
 
 if __name__ == "__main__":
-    parity_check = cg.safe_code_gen(
+    parity_check = safe_code_gen(
         bit_deg=3, check_deg=4, nmult=2, rcmk=True)

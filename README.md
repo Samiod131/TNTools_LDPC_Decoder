@@ -11,6 +11,6 @@ This is beginning to date and shows how my code came to improve over the years.
 
 Finish refactor of random code eval example. 
 
--Add proper docstring
--Clean syntax and naming
--Simplification
+- Add proper docstring
+- Clean syntax and naming
+- Simplification

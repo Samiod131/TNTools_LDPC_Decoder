@@ -6,81 +6,16 @@ import sys
 import numpy as np
 
 import tntools_ldpc_decoder as tnt_ldpc
-import code_gen
+from ldpc_rand_codegen import get_rand_code
 
 """
 Evaluation of LDPC decoder code example.
 """
 
 
-def results_saving(results, filename='results.txt'):
-    '''
-    Saves all params and results to a txt file. 
-    '''
-    # Unpackig each sub_dictionnary
-    labels = []
-    values = []
-    for sub_dict in results.values():
-        labels = labels+list(sub_dict.keys())
-        values = values+list(sub_dict.values())
-
-    save_to_file(parameters=values, filename=filename, header=labels)
-
-    return labels, values
-
-
-def save_to_file(parameters, filename, header=False, buffer=30):
-    '''
-    Saving a list of elements into a text, csv or dat file. Allows for header
-    selection when no precedent file already existing.
-    '''
-    try:
-        with open(filename) as _:
-            pass
-
-    except FileNotFoundError:
-        if header is False:
-            print('The file doesn\'t exist. Creating one for data.')
-
-        else:
-            print('File doesn\'t exist, Creating one with given header.')
-            header_line = ''
-            for i, param in enumerate(header):
-                if i == len(parameters)-1:
-                    param_add = str(param)
-                else:
-                    param_add = str(param)+','
-                skip = buffer-len(param_add)
-                if skip <= 0:
-                    param_add += ' '*buffer
-                else:
-                    param_add += ' '*skip
-                header_line += param_add
-            save = open(filename, 'a')
-            print(header_line, file=save)
-            save.close()
-
-    step_line = ''
-    for i, param in enumerate(parameters):
-        if i == len(parameters)-1:
-            param_add = str(param)
-        else:
-            param_add = str(param)+','
-        skip = buffer-len(param_add)
-        if skip <= 0:
-            param_add += ' '*buffer
-        else:
-            param_add += ' '*skip
-        step_line += param_add
-
-    save = open(filename, 'a')
-    print(step_line, file=save)
-    save.close()
-
-
-'''
-Decoder class + schedule
-'''
+"""
+Decoding tests run and schedule. 
+"""
 
 
 def bitflip_array(p, n):
@@ -115,7 +50,7 @@ def code_select(bit_degree, check_degree, code_size_mult, phys_err_rt, num_times
     Selects the right code, and the number of successive experiences from
     given parameters.
     '''
-    ldpc_code = code_gen.safe_code_gen(
+    ldpc_code = get_rand_code(
         bit_deg=bit_degree, check_deg=check_degree, nmult=code_size_mult, rcmk=True)
 
     return ldpc_code, phys_err_rt, num_times, check_degree*code_size_mult
@@ -200,11 +135,4 @@ def run_decode_frm_file(start_from='param_dict_list.json', send_to='results_list
 
 
 if __name__ == "__main__":
-    # Calling this file with a repo address with contained parameters sets.
-    if len(sys.argv) > 1:
-        path = str(sys.argv[1])  # retrieving path given
-    else:
-        path = 'LDPC_params_results'
-
-    run_decode_frm_file(start_from=path+'/param_dict_list.json',
-                        send_to=path+'/results_list.txt', codes_path=path+'/selected_codes/')
+    run_study("batch_params.json", results_file='results.txt')
